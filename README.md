@@ -1,68 +1,122 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+The idea behind this project is to provide a way to package a statically build application as a Docker image, and the deploy it on various scenarios:
 
-## Available Scripts
+ * docker-compose
+ * k8s
+ * s3
 
-In the project directory, you can run:
+# Building the image
 
-### `npm start`
+```console
+docker build -t dmetzler/static-html .
+```
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+# Running the image
 
-The page will reload if you make edits.<br>
-You will also see any lint errors in the console.
+The idea is to serve the static files with an NGinx server that is run as a sidecar. The image has a command that allows copy our static files in a destination volume.
 
-### `npm test`
 
-Launches the test runner in the interactive watch mode.<br>
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Deploy with Docker Compose
 
-### `npm run build`
+```yaml
+version: '3'
+services:
 
-Builds the app for production to the `build` folder.<br>
-It correctly bundles React in production mode and optimizes the build for the best performance.
+  html:
+    image: dmetzler/static-html
+    command: vol /html_dir
+    environment:
+      API_URL: https://jsonplaceholder.typicode.com/users
+    volumes:
+    - html:/html_dir/
+  nginx:
+    image: nginx
+    ports:
+      - "8080:80"
+    volumes:
+    - html:/usr/share/nginx/html/:ro
 
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+volumes:
+  html:
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Deploy with Openshift / Kubernetes
 
-### `npm run eject`
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  initContainers:
+  - name: html
+    image: dmetzler/static-html
+    imagePullPolicy: Always
+    command:
+    - "/entrypoint.sh"
+    - "vol"
+    - "/html_dir"
+    env:
+    - name: API_URL
+      value: https://jsonplaceholder.typicode.com/users
+    volumeMounts:
+    - name: htmldir
+      mountPath: /html_dir
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+  containers:
+  - name: nginx
+    image: twalter/openshift-nginx:stable
+    ports:
+    - containerPort: 8081
+    volumeMounts:
+    - name: htmldir
+      mountPath: /usr/share/nginx/html/
+      readOnly: true
+  volumes:
+    - name: htmldir
+      emptyDir: {}
+```
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Deploy to s3
 
-Instead, it will copy all the configuration files and the transitive dependencies (Webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+```console
+# docker run --rm \
+     -e API_URL=https://jsonplaceholder.typicode.com/users \
+     -e AWS_ACCESS_KEY_ID \
+     -e AWS_SECRET_ACCESS_KEY \
+     -e AWS_DEFAULT_REGION \
+     -e AWS_SESSION_TOKEN \
+     -it dmetzler/static-html s3 s3://mysamplestaticapp.com
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+# open http://mysamplestaticapp.com.s3-website-us-east-1.amazonaws.com
+```
 
-## Learn More
+# Environment variables
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+All environment variables references in the `.env` file are evaluated at runtime and rendered in a `env-config.js` file that is included in `index.html`.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+The environment variable values are then available under the `window._env_` variable.
 
-### Code Splitting
+```javascript
+window._env_ = {
+  API_URL: "https://jsonplaceholder.typicode.com/users",
+}
+```
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
+# Evolutions
 
-### Analyzing the Bundle Size
+## Distroless
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
+The resulting image is based on `amazonlinux` and is quite big, just to have th `aws-cli` utils and being able to run bash.
 
-### Making a Progressive Web App
+In order to use a distroless Docker image, we could build a Go based entrypoint that also takes care of the sync to s3.
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
 
-### Advanced Configuration
+## Base image
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
+Instead of using a multi-step build, we could provide a base image that embeds everything, so that the result is easier to use for someone who just wants to package some static assets.
 
-### Deployment
+# Reference:
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
-
-### `npm run build` fails to minify
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+ * [How to implement runtime environment variables](https://www.freecodecamp.org/news/how-to-implement-runtime-environment-variables-with-create-react-app-docker-and-nginx-7f9d42a91d70/)

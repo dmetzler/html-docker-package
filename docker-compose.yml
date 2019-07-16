@@ -1,0 +1,19 @@
+version: '3'
+services:
+
+  html:
+    build: .
+    command: vol /html_dir
+    environment:
+      API_URL: https://jsonplaceholder.typicode.com/users
+    volumes:
+    - html:/html_dir/
+  nginx:
+    image: nginx
+    ports:
+      - "8080:80"
+    volumes:
+    - html:/usr/share/nginx/html/
+
+volumes:
+  html:

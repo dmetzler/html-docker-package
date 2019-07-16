@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom';
 import './index.css';
 import App from './App';
 import * as serviceWorker from './serviceWorker';
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import { Button } from 'reactstrap';
+
+export const {config} = window
 
 ReactDOM.render(<App />, document.getElementById('root'));
 
