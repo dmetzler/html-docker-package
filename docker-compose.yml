@@ -3,7 +3,7 @@ services:
 
   html:
     build: .
-    command: vol /html_dir
+    command: volume
     environment:
       API_URL: https://jsonplaceholder.typicode.com/users
     volumes:
